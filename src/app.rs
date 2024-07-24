@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use rand::{thread_rng, Rng};
 
 #[derive(Debug)]
 pub struct Model {
@@ -131,9 +132,19 @@ impl Model {
                 vec![false, false, false],
             ],
 
-            // TODO: implement this option.
-            Preset::Random => vec![vec![false]],
-            
+            Preset::Random => {
+                let mut rng = thread_rng();
+                let mut outer = Vec::with_capacity((self.max_coords.y + 1) as usize);
+                for _ in 0..=self.max_coords.y {
+                    let mut inner: Vec<bool> = Vec::with_capacity((self.max_coords.x + 1) as usize);
+                    for _ in 0..=self.max_coords.x {
+                        inner.push(rng.gen_bool(0.3));
+                    }
+                    outer.push(inner);
+                }
+                outer
+            }
+
             Preset::Empty => vec![vec![false]],
         };
 
