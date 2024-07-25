@@ -1,9 +1,10 @@
+use colors_transform::Hsl;
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Widget, WidgetRef},
+    widgets::{Block, Borders, Paragraph, WidgetRef},
     Frame,
 };
 
@@ -19,9 +20,9 @@ pub fn view(f: &mut Frame, model: &mut Model) {
         ])
         .split(f.size());
 
-    let title_block = Block::default()
-        .borders(Borders::ALL)
-        .title(model.rulestring());
+    let title_block = Paragraph::new(Line::from(model.rulestring()))
+        .block(Block::default().borders(Borders::ALL).title("Rulestring"))
+        .centered();
 
     f.render_widget(title_block, chunks[0]);
 
@@ -53,8 +54,27 @@ impl WidgetRef for Model {
         for x in area.left()..area.right() {
             let mut relative_y = 0;
             for y in area.top()..area.bottom() {
-                if self.cells()[relative_y][relative_x] {
-                    buf.get_mut(x, y).set_char('█');
+                let mut hue = self.cells()[relative_y][relative_x].age as f32;
+                hue *= 2.0;
+                hue %= 360.0;
+
+                let mut saturation =
+                    100.0 - ((self.cells()[relative_y][relative_x].age as f32 / 360.0) * 25.0);
+                if saturation < 0.0 {
+                    saturation = 0.0;
+                }
+
+                let light =
+                    50.0 - ((self.cells()[relative_y][relative_x].age as f32 / 360.0) * 17.0);
+
+                let hsl = Hsl::from(hue, saturation, light);
+                let rgb = colors_transform::Color::to_rgb(&hsl);
+                if self.cells()[relative_y][relative_x].is_alive {
+                    buf.get_mut(x, y).set_char('█').set_fg(Color::Rgb(
+                        colors_transform::Color::get_red(&rgb) as u8,
+                        colors_transform::Color::get_green(&rgb) as u8,
+                        colors_transform::Color::get_blue(&rgb) as u8,
+                    ));
                 } else {
                     buf.get_mut(x, y).set_char(' ');
                 }
@@ -63,10 +83,14 @@ impl WidgetRef for Model {
             relative_x += 1;
         }
         if *self.state() == State::Editing {
-            let Coords { x: mut current_x, y: mut current_y } = *self.current_coords();
+            let Coords {
+                x: mut current_x,
+                y: mut current_y,
+            } = *self.current_coords();
             current_x += area.left() as i16;
             current_y += area.top() as i16;
-            buf.get_mut(current_x as u16, current_y as u16).set_bg(Color::Blue);
+            buf.get_mut(current_x as u16, current_y as u16)
+                .set_bg(Color::Blue);
         }
     }
 }
@@ -79,7 +103,7 @@ mod tests {
 
     #[test]
     fn render_blinker() {
-        let mut model = Model::new(5, 5, vec![3], vec![2, 3]);
+        let mut model = Model::new(5, 5, vec![3], vec![2, 3], 50);
         let mut buf = Buffer::empty(Rect::new(0, 0, 6, 6));
         model.load_preset(Preset::Blinker);
         model.render_ref(buf.area, &mut buf);

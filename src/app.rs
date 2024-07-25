@@ -1,9 +1,9 @@
-use clap::{Parser, Subcommand};
+use clap::Parser;
 use rand::{thread_rng, Rng};
 
 #[derive(Debug)]
 pub struct Model {
-    cells: Vec<Vec<bool>>,
+    cells: Vec<Vec<Cell>>,
     rule: Rule,
     state: State,
     current_coords: Coords,
@@ -42,15 +42,14 @@ pub enum Message {
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 pub struct Cli {
-
     #[arg(short, long)]
     pub rulestring: Option<String>,
-    
+
     #[arg(short, long)]
     pub preset_string: Option<String>,
 
     #[arg(short, long)]
-    pub tickrate: Option<u16>
+    pub tickrate: Option<u16>,
 }
 
 pub struct Config {
@@ -72,11 +71,24 @@ pub enum Preset {
     Blinker,
     Mold,
     Random,
+    HorizontalLine,
     Empty,
 }
 
+#[derive(Debug, PartialEq)]
+pub struct Cell {
+    pub is_alive: bool,
+    pub age: u32,
+}
+
 impl Model {
-    pub fn new(max_y: i16, max_x: i16, birth_list: Vec<u8>, survival_list: Vec<u8>, tickrate: u16) -> Model {
+    pub fn new(
+        max_y: i16,
+        max_x: i16,
+        birth_list: Vec<u8>,
+        survival_list: Vec<u8>,
+        tickrate: u16,
+    ) -> Model {
         for birth in &birth_list {
             if *birth > 8 {
                 panic!("Geometrically impossible birth constraint.");
@@ -97,7 +109,7 @@ impl Model {
         for _ in 0..=max_y {
             let mut inner = Vec::with_capacity(max_x as usize);
             for _ in 0..=max_x {
-                inner.push(false);
+                inner.push(Cell::new(false));
             }
             outer.push(inner);
         }
@@ -125,7 +137,7 @@ impl Model {
                 vec![true, false, true, true, false, false],
                 vec![false, true, false, false, false, false],
             ],
-            
+
             Preset::Blinker => vec![
                 vec![false, false, false],
                 vec![true, true, true],
@@ -145,10 +157,26 @@ impl Model {
                 outer
             }
 
+            Preset::HorizontalLine => {
+                let mut outer = Vec::with_capacity((self.max_coords.y + 1) as usize);
+                for y in 0..=self.max_coords.y {
+                    let mut inner = Vec::with_capacity((self.max_coords.x + 1) as usize);
+                    for _ in 0..=self.max_coords.x {
+                        inner.push(if y == self.max_coords.y / 2 {
+                            true
+                        } else {
+                            false
+                        });
+                    }
+                    outer.push(inner);
+                }
+                outer
+            }
+
             Preset::Empty => vec![vec![false]],
         };
 
-        self.insert_cells(cells);
+        self.insert_cells(Cell::vec_from(cells));
     }
 
     pub fn update(&mut self, msg: Message) {
@@ -167,11 +195,17 @@ impl Model {
 
     pub fn update_cell(&mut self, y: usize, x: usize, val: bool) {
         if (y as i16 <= self.max_coords.y) && (x as i16 <= self.max_coords.x) {
-            self.cells[y][x] = val;
+            self.cells[y][x].is_alive = val;
+            self.cells[y][x].age = 0;
+        }
+    }
+    pub fn increment_cell_age(&mut self, y: usize, x: usize) {
+        if (y as i16 <= self.max_coords.y) && (x as i16 <= self.max_coords.x) {
+            self.cells[y][x].age += 1;
         }
     }
 
-    pub fn cells(&self) -> &Vec<Vec<bool>> {
+    pub fn cells(&self) -> &Vec<Vec<Cell>> {
         &self.cells
     }
 
@@ -202,7 +236,7 @@ impl Model {
             return;
         }
 
-        let cells_prev = self.cells().clone();
+        let cells_prev = (*self.cells()).clone();
         for (y, line) in cells_prev.iter().enumerate() {
             for (x, cell) in line.iter().enumerate() {
                 let mut active_neighbors = 0;
@@ -226,18 +260,18 @@ impl Model {
 
                 // take care of upper, upper-left, and upper-right neighbors
                 if can_go_up {
-                    if cells_prev[y - 1][x] {
+                    if cells_prev[y - 1][x].is_alive {
                         active_neighbors += 1
                     }
 
                     if can_go_left {
-                        if cells_prev[y - 1][x - 1] {
+                        if cells_prev[y - 1][x - 1].is_alive {
                             active_neighbors += 1
                         }
                     }
 
                     if can_go_right {
-                        if cells_prev[y - 1][x + 1] {
+                        if cells_prev[y - 1][x + 1].is_alive {
                             active_neighbors += 1
                         }
                     }
@@ -245,18 +279,18 @@ impl Model {
 
                 // take care of lower, lower-left, and lower-right neighbors
                 if can_go_down {
-                    if cells_prev[y + 1][x] {
+                    if cells_prev[y + 1][x].is_alive {
                         active_neighbors += 1
                     }
 
                     if can_go_left {
-                        if cells_prev[y + 1][x - 1] {
+                        if cells_prev[y + 1][x - 1].is_alive {
                             active_neighbors += 1
                         }
                     }
 
                     if can_go_right {
-                        if cells_prev[y + 1][x + 1] {
+                        if cells_prev[y + 1][x + 1].is_alive {
                             active_neighbors += 1
                         }
                     }
@@ -264,19 +298,19 @@ impl Model {
 
                 // take care of left neighbor
                 if can_go_left {
-                    if cells_prev[y][x - 1] {
+                    if cells_prev[y][x - 1].is_alive {
                         active_neighbors += 1
                     }
                 }
 
                 // take care of right neighbor
                 if can_go_right {
-                    if cells_prev[y][x + 1] {
+                    if cells_prev[y][x + 1].is_alive {
                         active_neighbors += 1
                     }
                 }
 
-                if *cell {
+                if (*cell).is_alive {
                     // check if living cell survives
                     let mut kill_cell = true;
                     for criterion in &self.rule.survival_list.clone() {
@@ -286,6 +320,8 @@ impl Model {
                     }
                     if kill_cell {
                         self.update_cell(y, x, false);
+                    } else {
+                        self.increment_cell_age(y, x);
                     }
                 } else {
                     // check if cell is born
@@ -299,22 +335,22 @@ impl Model {
         }
     }
 
-    fn insert_cells(&mut self, cells: Vec<Vec<bool>>) {
+    fn insert_cells(&mut self, cells: Vec<Vec<Cell>>) {
         for (y, line) in cells.iter().enumerate() {
             for (x, cell) in line.iter().enumerate() {
-                self.cells[y][x] = *cell;
+                self.cells[y][x].is_alive = cell.is_alive;
             }
         }
     }
 
     fn set_cell(&mut self, y: usize, x: usize, val: bool) {
-        self.cells[y][x] = val;
+        self.cells[y][x].is_alive = val;
     }
 
     fn toggle_current_cell(&mut self) {
         let Coords { x: xp, y: yp } = self.current_coords();
         let (x, y) = (*xp, *yp);
-        self.cells[y as usize][x as usize] = !self.cells[y as usize][x as usize];
+        self.cells[y as usize][x as usize].is_alive = !self.cells[y as usize][x as usize].is_alive;
     }
 
     fn toggle_editing_state(&mut self) {
@@ -363,10 +399,12 @@ impl Model {
 
 impl Preset {
     pub fn from(preset_string: &str) -> Preset {
+        let preset_string = preset_string.to_lowercase();
         match &preset_string[..] {
-            "Blinker" => Preset::Blinker,
-            "Mold" => Preset::Mold,
-            "Random" => Preset::Random,
+            "blinker" => Preset::Blinker,
+            "mold" => Preset::Mold,
+            "random" => Preset::Random,
+            "horizontalline" => Preset::HorizontalLine,
             _ => Preset::Empty,
         }
     }
@@ -376,7 +414,7 @@ impl Rule {
     pub fn from(rulestring: &str) -> Rule {
         let mut in_born = false;
         let mut in_survival = false;
-        
+
         let mut birth_list = vec![];
         let mut survival_list = vec![];
         for ch in rulestring.chars() {
@@ -414,7 +452,7 @@ impl Rule {
     pub fn default() -> Rule {
         Rule {
             birth_list: vec![3],
-            survival_list: vec![2, 3]
+            survival_list: vec![2, 3],
         }
     }
 }
@@ -429,13 +467,47 @@ impl Config {
     }
 }
 
+impl Cell {
+    pub fn new(state: bool) -> Cell {
+        Cell {
+            is_alive: state,
+            age: 0,
+        }
+    }
+
+    pub fn update(&mut self, state: bool) {
+        self.is_alive = state;
+    }
+
+    pub fn vec_from(bool_cells: Vec<Vec<bool>>) -> Vec<Vec<Cell>> {
+        let mut outer = Vec::with_capacity(bool_cells.len());
+        for vector in bool_cells {
+            let mut inner = Vec::with_capacity(vector.len());
+            for cell in vector {
+                inner.push(Cell::new(cell));
+            }
+            outer.push(inner);
+        }
+        outer
+    }
+}
+
+impl Clone for Cell {
+    fn clone(&self) -> Cell {
+        Cell {
+            is_alive: self.is_alive,
+            age: self.age,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn move_cursor() {
-        let mut model = Model::new(10, 10, vec![], vec![]);
+        let mut model = Model::new(10, 10, vec![], vec![], 50);
         model.move_cursor(-1, -4);
         assert_eq!(Coords { x: 0, y: 0 }, *model.current_coords());
         model.move_cursor(5, 6);
@@ -446,7 +518,7 @@ mod tests {
 
     #[test]
     fn move_cursor_in_direction() {
-        let mut model = Model::new(10, 10, vec![], vec![]);
+        let mut model = Model::new(10, 10, vec![], vec![], 50);
         model.move_cursor_in_direction(Direction::Down);
         assert_eq!(Coords { x: 0, y: 1 }, *model.current_coords());
         model.move_cursor_in_direction(Direction::Right);
@@ -460,47 +532,47 @@ mod tests {
     #[test]
     #[should_panic(expected = "Geometrically impossible birth")]
     fn too_many_neighbors_birth() {
-        Model::new(10, 10, vec![1, 2, 9], vec![1, 2, 3]);
+        Model::new(10, 10, vec![1, 2, 9], vec![1, 2, 3], 50);
     }
 
     #[test]
     #[should_panic(expected = "Geometrically impossible survival")]
     fn too_many_neighbors_survival() {
-        Model::new(10, 10, vec![4, 4, 4], vec![9, 4, 4]);
+        Model::new(10, 10, vec![4, 4, 4], vec![9, 4, 4], 50);
     }
 
     #[test]
     #[should_panic(expected = "Max coords")]
     fn max_x_too_small() {
-        Model::new(10, -1, vec![], vec![]);
+        Model::new(10, -1, vec![], vec![], 50);
     }
 
     #[test]
     #[should_panic(expected = "Max coords")]
     fn max_y_too_small() {
-        Model::new(0, 10, vec![], vec![]);
+        Model::new(0, 10, vec![], vec![], 50);
     }
 
     #[test]
     fn toggle_current_cell() {
-        let mut model = Model::new(3, 3, vec![], vec![]);
+        let mut model = Model::new(3, 3, vec![], vec![], 50);
         model.move_cursor_in_direction(Direction::Down);
         model.move_cursor_in_direction(Direction::Right);
         model.update(Message::ToggleCellState);
         assert_eq!(
-            vec![
+            Cell::vec_from(vec![
                 vec![false; 4],
                 vec![false, true, false, false],
                 vec![false; 4],
                 vec![false; 4]
-            ],
+            ]),
             *model.cells()
         );
     }
 
     #[test]
     fn toggle_editing_state() {
-        let mut model = Model::new(5, 5, vec![], vec![]);
+        let mut model = Model::new(5, 5, vec![], vec![], 50);
         model.update(Message::ToggleEditing);
         assert_eq!(*model.state(), State::Running);
         model.update(Message::ToggleEditing);
@@ -509,96 +581,96 @@ mod tests {
 
     #[test]
     fn pass_tick_running_blinker() {
-        let mut model = Model::new(4, 4, vec![3], vec![2, 3]);
-        model.cells = vec![
+        let mut model = Model::new(4, 4, vec![3], vec![2, 3], 50);
+        model.cells = Cell::vec_from(vec![
             vec![false, false, false, false, false],
             vec![false, false, false, false, false],
             vec![false, true, true, true, false],
             vec![false, false, false, false, false],
             vec![false, false, false, false, false],
-        ];
+        ]);
         model.update(Message::ToggleEditing);
         model.update(Message::Idle);
         assert_eq!(
             *model.cells(),
-            vec![
+            Cell::vec_from(vec![
                 vec![false, false, false, false, false],
                 vec![false, false, true, false, false],
                 vec![false, false, true, false, false],
                 vec![false, false, true, false, false],
                 vec![false, false, false, false, false],
-            ]
+            ])
         );
         model.update(Message::Idle);
         assert_eq!(
             *model.cells(),
-            vec![
+            Cell::vec_from(vec![
                 vec![false, false, false, false, false],
                 vec![false, false, false, false, false],
                 vec![false, true, true, true, false],
                 vec![false, false, false, false, false],
                 vec![false, false, false, false, false],
-            ]
+            ])
         );
     }
 
     #[test]
     fn load_preset() {
-        let mut model = Model::new(4, 5, vec![3], vec![2, 3]);
+        let mut model = Model::new(4, 5, vec![3], vec![2, 3], 50);
         model.load_preset(Preset::Blinker);
         assert_eq!(
             *model.cells(),
-            vec![
+            Cell::vec_from(vec![
                 vec![false, false, false, false, false, false],
                 vec![true, true, true, false, false, false],
                 vec![false, false, false, false, false, false],
                 vec![false, false, false, false, false, false],
                 vec![false, false, false, false, false, false],
-            ]
+            ])
         );
         model.update(Message::ToggleEditing);
         model.update(Message::Idle);
         assert_eq!(
             *model.cells(),
-            vec![
+            Cell::vec_from(vec![
                 vec![false, true, false, false, false, false],
                 vec![false, true, false, false, false, false],
                 vec![false, true, false, false, false, false],
                 vec![false, false, false, false, false, false],
                 vec![false, false, false, false, false, false],
-            ]
+            ])
         );
     }
 
     #[test]
     fn pass_tick_running_mold() {
-        let mut model = Model::new(5, 5, vec![3], vec![2, 3]);
-        model.cells = vec![
+        let mut model = Model::new(5, 5, vec![3], vec![2, 3], 50);
+        model.cells = Cell::vec_from(vec![
             vec![false, false, false, true, true, false],
             vec![false, false, true, false, false, true],
             vec![true, false, false, true, false, true],
             vec![false, false, false, false, true, false],
             vec![true, false, true, true, false, false],
             vec![false, true, false, false, false, false],
-        ];
+        ]);
         model.update(Message::ToggleEditing);
         model.update(Message::Idle);
         assert_eq!(
             *model.cells(),
-            vec![
+            Cell::vec_from(vec![
                 vec![false, false, false, true, true, false],
                 vec![false, false, true, false, false, true],
                 vec![false, false, false, true, false, true],
                 vec![false, true, true, false, true, false],
                 vec![false, true, true, true, false, false],
                 vec![false, true, true, false, false, false],
-            ]
+            ])
         );
     }
 
     #[test]
     fn rulestring() {
-        let model = Model::new(3, 3, vec![2, 3, 5], vec![1, 7]);
+        let model = Model::new(3, 3, vec![2, 3, 5], vec![1, 7], 50);
         assert_eq!(model.rulestring(), "B235/S17");
     }
 
