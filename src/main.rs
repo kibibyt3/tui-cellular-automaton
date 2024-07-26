@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (columns, rows) = size()?;
 
     let mut model = Model::new(
-        (rows as i16) - 3 - 1,
+        (rows as i16) - 6 - 1,
         (columns as i16) - 1,
         config.rule.birth_list,
         config.rule.survival_list,
