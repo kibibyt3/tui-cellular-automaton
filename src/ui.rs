@@ -11,41 +11,54 @@ use ratatui::{
 use crate::app::{Coords, Model, State};
 
 pub fn view(f: &mut Frame, model: &mut Model) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Min(2),
-            Constraint::Length(3),
-        ])
-        .split(f.size());
-
-    let title_block = Paragraph::new(Line::from(model.rulestring()))
-        .block(Block::default().borders(Borders::ALL).title("Rulestring"))
-        .centered();
-
-    f.render_widget(title_block, chunks[0]);
-
-    f.render_widget(&*model, chunks[1]);
-
-    let current_keys_hint = {
-        match model.state() {
-            State::Editing => Span::styled(
-                "(Space) to toggle cell / (WASD) to move / (e) to exit editing mode",
-                Style::default().fg(Color::Yellow),
-            ),
-            State::Running => Span::styled(
-                "(e) to enter editing mode",
-                Style::default().fg(Color::Yellow),
-            ),
-            State::Done => Span::styled("", Style::default()),
-        }
+    let chunks = if model.pretty_mode() {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(2)])
+            .split(f.size())
+    } else {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3),
+                Constraint::Min(2),
+                Constraint::Length(3),
+            ])
+            .split(f.size())
     };
 
-    let key_notes_footer =
-        Paragraph::new(Line::from(current_keys_hint)).block(Block::default().borders(Borders::ALL));
 
-    f.render_widget(key_notes_footer, chunks[2]);
+    if !model.pretty_mode() {
+
+        f.render_widget(&*model, chunks[1]);
+        let title_block = Paragraph::new(Line::from(model.rulestring()))
+            .block(Block::default().borders(Borders::ALL).title("Rulestring"))
+            .centered();
+
+        f.render_widget(title_block, chunks[0]);
+
+
+        let current_keys_hint = {
+            match model.state() {
+                State::Editing => Span::styled(
+                    "(Space) to toggle cell / (WASD) to move / (e) to exit editing mode",
+                    Style::default().fg(Color::Yellow),
+                ),
+                State::Running => Span::styled(
+                    "(e) to enter editing mode",
+                    Style::default().fg(Color::Yellow),
+                ),
+                State::Done => Span::styled("", Style::default()),
+            }
+        };
+
+        let key_notes_footer =
+            Paragraph::new(Line::from(current_keys_hint)).block(Block::default().borders(Borders::ALL));
+
+        f.render_widget(key_notes_footer, chunks[2]);
+    } else {
+        f.render_widget(&*model, chunks[0]);
+    }
 }
 
 impl WidgetRef for Model {
@@ -103,7 +116,7 @@ mod tests {
 
     #[test]
     fn render_blinker() {
-        let mut model = Model::new(5, 5, vec![3], vec![2, 3], 50);
+        let mut model = Model::new(5, 5, vec![3], vec![2, 3], 50, false);
         let mut buf = Buffer::empty(Rect::new(0, 0, 6, 6));
         model.load_preset(Preset::Blinker);
         model.render_ref(buf.area, &mut buf);

@@ -51,19 +51,34 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let config = Config::build(&preset_string, &rulestring, tickrate);
+    let pretty_mode = {
+        if let Some(item) = cli.pretty_mode {
+            item
+        } else {
+            false
+        }
+    };
+
+    let config = Config::build(&preset_string, &rulestring, tickrate, pretty_mode);
 
     install_hooks()?;
     let mut terminal = init()?;
 
     let (columns, rows) = size()?;
 
+    let row_offset = if pretty_mode {
+        0
+    } else {
+        6
+    };
+
     let mut model = Model::new(
-        (rows as i16) - 6 - 1,
+        (rows as i16) - row_offset - 1,
         (columns as i16) - 1,
         config.rule.birth_list,
         config.rule.survival_list,
         config.tickrate,
+        config.pretty_mode,
     );
 
     model.load_preset(config.preset);

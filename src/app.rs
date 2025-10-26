@@ -9,6 +9,7 @@ pub struct Model {
     current_coords: Coords,
     max_coords: Coords,
     tickrate: u16,
+    pretty_mode: bool,
 }
 
 #[derive(Debug, PartialEq)]
@@ -50,12 +51,16 @@ pub struct Cli {
 
     #[arg(short, long)]
     pub tickrate: Option<u16>,
+
+    #[arg(long)]
+    pub pretty_mode: Option<bool>,
 }
 
 pub struct Config {
     pub rule: Rule,
     pub preset: Preset,
     pub tickrate: u16,
+    pub pretty_mode: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -88,6 +93,7 @@ impl Model {
         birth_list: Vec<u8>,
         survival_list: Vec<u8>,
         tickrate: u16,
+        pretty_mode: bool,
     ) -> Model {
         for birth in &birth_list {
             if *birth > 8 {
@@ -124,6 +130,7 @@ impl Model {
             current_coords: Coords { x: 0, y: 0 },
             max_coords: Coords { x: max_x, y: max_y },
             tickrate,
+            pretty_mode,
         }
     }
 
@@ -137,7 +144,6 @@ impl Model {
                 vec![true, false, true, true, false, false],
                 vec![false, true, false, false, false, false],
             ],
-
             Preset::Blinker => vec![
                 vec![false, false, false],
                 vec![true, true, true],
@@ -229,6 +235,10 @@ impl Model {
             result.push_str(&survival_rule.to_string());
         }
         result
+    }
+
+    pub fn pretty_mode(&self) -> bool {
+        self.pretty_mode
     }
 
     pub fn pass_tick(&mut self) {
@@ -458,11 +468,12 @@ impl Rule {
 }
 
 impl Config {
-    pub fn build(preset_string: &str, rulestring: &str, tickrate: u16) -> Config {
+    pub fn build(preset_string: &str, rulestring: &str, tickrate: u16, pretty_mode: bool) -> Config {
         Config {
             preset: Preset::from(preset_string),
             rule: Rule::from(rulestring),
             tickrate,
+            pretty_mode,
         }
     }
 }
@@ -507,7 +518,7 @@ mod tests {
 
     #[test]
     fn move_cursor() {
-        let mut model = Model::new(10, 10, vec![], vec![], 50);
+        let mut model = Model::new(10, 10, vec![], vec![], 50, false);
         model.move_cursor(-1, -4);
         assert_eq!(Coords { x: 0, y: 0 }, *model.current_coords());
         model.move_cursor(5, 6);
@@ -518,7 +529,7 @@ mod tests {
 
     #[test]
     fn move_cursor_in_direction() {
-        let mut model = Model::new(10, 10, vec![], vec![], 50);
+        let mut model = Model::new(10, 10, vec![], vec![], 50, false);
         model.move_cursor_in_direction(Direction::Down);
         assert_eq!(Coords { x: 0, y: 1 }, *model.current_coords());
         model.move_cursor_in_direction(Direction::Right);
@@ -532,30 +543,30 @@ mod tests {
     #[test]
     #[should_panic(expected = "Geometrically impossible birth")]
     fn too_many_neighbors_birth() {
-        Model::new(10, 10, vec![1, 2, 9], vec![1, 2, 3], 50);
+        Model::new(10, 10, vec![1, 2, 9], vec![1, 2, 3], 50, false);
     }
 
     #[test]
     #[should_panic(expected = "Geometrically impossible survival")]
     fn too_many_neighbors_survival() {
-        Model::new(10, 10, vec![4, 4, 4], vec![9, 4, 4], 50);
+        Model::new(10, 10, vec![4, 4, 4], vec![9, 4, 4], 50, false);
     }
 
     #[test]
     #[should_panic(expected = "Max coords")]
     fn max_x_too_small() {
-        Model::new(10, -1, vec![], vec![], 50);
+        Model::new(10, -1, vec![], vec![], 50, false);
     }
 
     #[test]
     #[should_panic(expected = "Max coords")]
     fn max_y_too_small() {
-        Model::new(0, 10, vec![], vec![], 50);
+        Model::new(0, 10, vec![], vec![], 50, false);
     }
 
     #[test]
     fn toggle_current_cell() {
-        let mut model = Model::new(3, 3, vec![], vec![], 50);
+        let mut model = Model::new(3, 3, vec![], vec![], 50, false);
         model.move_cursor_in_direction(Direction::Down);
         model.move_cursor_in_direction(Direction::Right);
         model.update(Message::ToggleCellState);
@@ -572,7 +583,7 @@ mod tests {
 
     #[test]
     fn toggle_editing_state() {
-        let mut model = Model::new(5, 5, vec![], vec![], 50);
+        let mut model = Model::new(5, 5, vec![], vec![], 50, false);
         model.update(Message::ToggleEditing);
         assert_eq!(*model.state(), State::Running);
         model.update(Message::ToggleEditing);
@@ -581,7 +592,7 @@ mod tests {
 
     #[test]
     fn pass_tick_running_blinker() {
-        let mut model = Model::new(4, 4, vec![3], vec![2, 3], 50);
+        let mut model = Model::new(4, 4, vec![3], vec![2, 3], 50, false);
         model.cells = Cell::vec_from(vec![
             vec![false, false, false, false, false],
             vec![false, false, false, false, false],
@@ -616,7 +627,7 @@ mod tests {
 
     #[test]
     fn load_preset() {
-        let mut model = Model::new(4, 5, vec![3], vec![2, 3], 50);
+        let mut model = Model::new(4, 5, vec![3], vec![2, 3], 50, false);
         model.load_preset(Preset::Blinker);
         assert_eq!(
             *model.cells(),
@@ -644,7 +655,7 @@ mod tests {
 
     #[test]
     fn pass_tick_running_mold() {
-        let mut model = Model::new(5, 5, vec![3], vec![2, 3], 50);
+        let mut model = Model::new(5, 5, vec![3], vec![2, 3], 50, false);
         model.cells = Cell::vec_from(vec![
             vec![false, false, false, true, true, false],
             vec![false, false, true, false, false, true],
@@ -670,7 +681,7 @@ mod tests {
 
     #[test]
     fn rulestring() {
-        let model = Model::new(3, 3, vec![2, 3, 5], vec![1, 7], 50);
+        let model = Model::new(3, 3, vec![2, 3, 5], vec![1, 7], 50, false);
         assert_eq!(model.rulestring(), "B235/S17");
     }
 
